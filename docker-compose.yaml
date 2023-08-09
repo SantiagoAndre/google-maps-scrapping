@@ -1,0 +1,15 @@
+version: "3"
+
+services:
+
+  app:
+    build: .
+    # image: selenium/standalone-chrome:latest
+    ports:
+      - 4444:4444
+      - 7900:7900
+    volumes:
+      - .:/src/
+    working_dir:  /src
+    command: python3  main.py
+    shm_size: 2gb
