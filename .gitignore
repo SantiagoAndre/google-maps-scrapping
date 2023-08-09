@@ -1,0 +1,5 @@
+build/
+execution_times.log
+profiles/
+screenshots/
+__pycache__
