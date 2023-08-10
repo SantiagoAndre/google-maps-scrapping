@@ -1,23 +1,26 @@
+# Use selenium with chrome as base image
 FROM selenium/standalone-chrome:latest
+
+# Set working directory
 WORKDIR /src
+
+# Copy requirements
 COPY requirements.txt /src/requirements.txt
-# Install pip
-# Install pip & required dependencies
+
+# Switch to root to install dependencies
 USER root
-# Install pip, required dependencies, and python3-distutils
-RUN apt-get update \
-    && apt-get install -y curl python3-distutils \
-    && curl https://bootstrap.pypa.io/get-pip.py | python3 \
-    && pip3 install --no-cache-dir -r requirements.txt
 
-# RUN /usr/local/bin/pip3 install --upgrade pip
-# RUN /usr/local/bin/pip3 install --no-cache-dir -r /src/requirements.txt
-# COPY . /src/
+# Update, install system dependencies, get pip, and install python libraries
+RUN apt-get update && \
+    apt-get install -y \
+    pkg-config \
+    libcairo2-dev \
+    curl \
+    python3-distutils \
+    build-essential \
+    python3.8-dev && \
+    curl https://bootstrap.pypa.io/get-pip.py | python3 && \
+    pip3 install --no-cache-dir -r requirements.txt
 
-# RUN apt-get update && apt-get install -y xvfb
-
-
-# # Set display port and dbus for Xvfb
-# ENV DISPLAY=:99
-# ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
-
+# Clean up APT when done
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* 
