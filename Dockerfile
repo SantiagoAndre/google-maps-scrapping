@@ -24,3 +24,5 @@ RUN apt-get update && \
 
 # Clean up APT when done
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* 
+RUN pip3 install xlsxwriter
+CMD [ "python3","main.py" ]
