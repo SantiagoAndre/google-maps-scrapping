@@ -1,15 +1,34 @@
 function parse() {
-    let inputString = window.APP_INITIALIZATION_STATE[3][6]
-    let substringToRemove = ")]}'"
-  
-    let modifiedString
-    if (inputString.startsWith(substringToRemove)) {
-      modifiedString = inputString.slice(substringToRemove.length)
-    } else {
-    }
-    return JSON.parse(modifiedString)
+  let inputString = window.APP_INITIALIZATION_STATE[3][6]
+  let substringToRemove = ")]}'"
+
+  let modifiedString
+  if (inputString.startsWith(substringToRemove)) {
+    modifiedString = inputString.slice(substringToRemove.length)
+  } else {
+    // Handle the case where the inputString doesn't start with the substring.
+    modifiedString = inputString; // or any other logic you deem necessary
   }
-  
+
+  saveStringToFile(modifiedString, "modifiedData.json");
+
+  return JSON.parse(modifiedString);
+}
+
+function saveStringToFile(data, filename) {
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = filename;
+
+  document.body.appendChild(a);
+  a.click();
+
+  window.URL.revokeObjectURL(url);
+}
+
   function get_categories(data) {
     return data?.[6]?.[13]
   }

@@ -63,7 +63,7 @@ class LinksMapsTask():
         max_results = self.data.get('max_results')
         main_selector = '[role="feed"]'
         content_selector = '[role="feed"] >  div > div > a'
-        links = set(self.get_links(self.driver, main_selector,content_selector, keyword, max_results))
+        links = list(self.get_links(self.driver, main_selector,content_selector, keyword, max_results))
         # print("scroll ended ")
         for i in range(self.config.reviews):
             print(f"Reviewing {i+1}")

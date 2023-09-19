@@ -87,7 +87,6 @@ class Scheduler:
             self.consumers = consumers
             self.p_coros = [asyncio.create_task(task.produce(queue)) for task in producers]
             self.c_coros = [asyncio.create_task(task.consume(queue)) for task in consumers]
-            print("hola")
             def signal_handler(sig, frame):
                 for coro in self.p_coros+self.c_coros:
                     coro.cancel()
@@ -95,7 +94,6 @@ class Scheduler:
 
             signal.signal(signal.SIGINT, signal_handler)
                 # Wait until tasks are complete
-            print("hola end")
             
 
     async def await_ultil_end(self):

@@ -56,9 +56,12 @@ def read_json(path):
     except :
         pass
 def read_file(path):
-    with open(path, 'r') as fp:
-        content = fp.read()
-        return content
+    try: 
+        with open(path, 'r') as fp:
+            content = fp.read()
+            return content
+    except FileNotFoundError:
+        pass
         
 def write_json(data, path,  indent=4):
     if type(data) is set:
@@ -77,13 +80,21 @@ def json_to_excel_io(data,**kwargs):
     pandas_wirter._save()
     
     return output
+def json_to_excel(cursor, filename, chunk_size=5000):
+    writer = pd.ExcelWriter(filename, engine='xlsxwriter')
+    start_row = 0
+    # cursor = list(cursor)
+    # print(cursor)
+    while True:
+        data = [doc for _, doc in zip(range(chunk_size), cursor)]
+        print(data)
+        if not data:
+            break
+        df = pd.DataFrame(data)
+        df.to_excel(writer, startrow=start_row, index=False)
+        start_row += len(df)
 
-def json_to_excel(data,filename):
-    pandas_wirter = pd.ExcelWriter(filename, engine='xlsxwriter')
-    df  =pd.DataFrame(data,)
-    df.to_excel(pandas_wirter)
-    # print(dir(pandas_wirter))
-    pandas_wirter._save()
+    writer._save()
 
 import time
 

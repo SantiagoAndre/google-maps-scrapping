@@ -24,7 +24,6 @@ pandas==2.0.3
 pyasn1==0.5.0
 pycparser==2.21
 pydash==7.0.5
-PyGObject==3.36.0
 pyOpenSSL==23.2.0
 pyparsing==3.1.0
 PySocks==1.7.1
@@ -48,3 +47,4 @@ websockets==11.0.3
 wsproto==1.2.0
 zipp==3.16.2
 zstandard==0.21.0
+xlsxwriter

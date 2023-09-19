@@ -10,6 +10,14 @@ services:
       - 7900:7900
     volumes:
       - .:/src/
-    working_dir:  /src
-    command: python3  main.py
+    env_file:
+      - .env
+    working_dir:  /src 
+    command: python3  main.py queries.json
     shm_size: 2gb
+    networks:  # Añade esta sección
+      - mongo_default
+
+networks:  # Asegúrate de que esta sección esté en tu archivo
+  mongo_default:
+    external: true

@@ -1,290 +1,156 @@
+from pymongo.errors import BulkWriteError
 
-from factory.factory import CustomDriverFactory,BrowserConfig
-from tasks import LinksMapsTask,PlaceMapsTask
-from drivers import TaskConfig,WindowsDriverAdmin
+from tasks import LinksMapsTask, PlaceMapsTask
+from drivers import LazyDriverWrapper, TaskConfig
+from utils import read_json, json_to_excel, timer_decorator_log
+from mongo import BatchedMongoSaver
+
+import settings
 import random
-import queue
-from utils import write_json,read_json,divide_list,json_to_excel, timer_decorator_log
-def test_getlinks():
-    str_queries = """PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  13734
-    PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  15730
-    PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  10731
-    PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  12732
-    PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  15733
-    PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  13734
-    PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  15735"""
-    try:
-        queries = [{"keyword":q} for q in str_queries.split("\n")]
-        config = TaskConfig(reviews=0)
-        all_links = set()
-        for query in queries:
-            links = LinksMapsTask(driver,query,config).run()
-            all_links.update(links)
-        write_json(all_links,"all_links.json")
-        
-    except Exception as e:
-        write_json(all_links,"all_links.json")
-        raise e
-def test_place_maps():
-    links  = read_json("all_links.json")
-    results = PlaceMapsTask(driver,{'links':links}).run()
-    write_json(results,"results.json")
-# test_place_maps()
+from urllib.parse import urlparse
+import sys
 
-def get_all_keywords():
-    industries = read_json("industries.json")
-    states = [
-        {
-            "name":"PENNSYLVANIA",
-            "countries":[{"name":"JEFFERSON COUNTY","zips":[19140]}]
-        }
-    ]
-    # zips = [19140]
-    # PEST CONTROL JEFFERSON COUNTY PENNSYLVANIA  15730
-    # * 59 industrias PENNSYLVANIA - PHILADELPHIA COUNTY - 19140
-    for industry in industries:
-        for state in states:
-            for country in state['countries']:
-                for zip in country['zips']:
-                    yield (f"{industry} {country['name']} {state['name']} {zip}")
+class KeywordGenerator:
+    def __init__(self, states):
+        self.states = states
 
+    def get_all_keywords(self):
+        industries = settings.industries_collection.find({})
+        industries = list(industries)[1:]
+        for industry in industries:
+            for state in self.states:
+                for country in state['countries']:
+                    for zip in country['zips']:
+                        yield (f"{industry['name']} {country['name']} {state['name']} {zip}")
 
-from  async_tasks_poo import AbstractConsumer,AbstractProducer,Scheduler
-
-
-
-from threading import Lock
-from concurrent.futures import wait
-
-
-class LinksProducer(AbstractProducer):
-    lock = Lock()
-    summary_links_lock = Lock()
-    def __init__(self,number,driver,queries,all_links) -> None:
-        self.queries = queries
+class LinkCollector:
+    def __init__(self, driver):
         self.driver = driver
-        self.number = number
-        self.all_links = all_links
-        self.name = f"Producer {number}"
-        self.links_summary = []
-        super().__init__(f"LinksProducer {number}")
-    
-    
-    def links_summary_f(self,query,current_url,links):
-        # print("Accessing to summary links lock")
-        # with self.summary_links_lock:
-            query.update({'link':current_url,'count':len(links)})
-            self.links_summary.append(query)
-            if len(self.links_summary) > 30:
-                links_summary = read_json("links_summary_sync.json") or []
-                links_summary.extend(self.links_summary)
-                write_json(links_summary,"links_summary_sync.json")
-                self.links_summary = []
-        # print("Summary links lock end successfully")
-        
-    def generate_items(self):
+
+    def get_all_links(self, queries):
         config = TaskConfig(reviews=0)
-        print(self.queries)
-        for i,query in enumerate(self.queries):
-            print("query ",i)
-            task = LinksMapsTask(self.driver,query,config)
+        all_links = [] 
+        for i, query in enumerate(queries):
+            task = LinksMapsTask(self.driver, query, config)
             links = task.run()
-            self.links_summary_f(query,task.current_url,links)
-            for link in links:
-                # print("Accessing to Links lock")
-                data = None
-                # with self.lock:
-                if link not in self.all_links: 
-                    self.all_links.append(link)
-                    data =  {'link':link,'config':query}
-                # print("Summary links lock end successfully")
-                    yield data 
-                
-            self.driver.sleep( 0.5)
-        self.stop()
-    def stop(self):
-        links_summary = read_json("links_summary_sync.json") or []
-        links_summary.extend(self.links_summary)
-        write_json(links_summary,"links_summary_sync.json")
-        self.links_summary = []
-        # self.driver.close()
+            if not links:continue
+            batch = [{'link':link , 'query':query['keyword']} for link in links]
+            # inserted_limks = [doc.get("_id") for doc in batch]  # Preinicializa con todos los IDs
 
+            try:
+                response = settings.links_collection.insert_many(batch,ordered=False)
+                # inserted_ids = response.inserted_ids
+            except BulkWriteError as bwe:
+                # # Maneja o registra los errores
+                # for error in bwe.details["writeErrors"]:
+                #     if error["code"] == 11000:  # código de error de duplicado
+                #         # print(f"Error de duplicado en el link: {error['op']['link']}")
+                #         # Elimina los IDs de los documentos que causaron errores
+                #         index = error["index"]
+                #         links[index] = None
 
+                # Limpia los None de la lista
+                links = [i for i in links if i is not None]
+            yield query['keyword'],links
+            
+class DataCollector:
+    def __init__(self, driver):
+        self.driver = driver
+        self.batch_contacts_saver = BatchedMongoSaver(settings.contacts_collection,batch_size=100)
+        # print(settings.contacts_collection)
+    def visit_pages(self,keyword, all_links):
+        inserted_ids = []
+        for link in all_links:
+            
+            results = PlaceMapsTask(self.driver, {'link': link},config={'keyword':keyword}).run()
+            _id = self.batch_contacts_saver.add(results)
+            inserted_ids.append(_id)
+        self.batch_contacts_saver.flush()
+        return inserted_ids
 
-class PlacesConsumer(AbstractConsumer):
-    def __init__(self,number,driver) -> None:
-        self.name = f"Places Consumer {number}"
-        self.driver =driver
-        super().__init__(f"PlacesConsummer {number}")
-        self.final_data  = list()
-        self.lock_final_data = Lock()
+class ReportGenerator:
+    def __init__(self) -> None:
+        pass
 
-    def process_item(self, data):
-        link = data['link']
-        keyword = data['keyword']
-        results = PlaceMapsTask(self.driver,{'link':link,"keyword":keyword}).run()
-        # print("Accessing to  final data lock")
+    def generate_report(self, keyword, contacts_ids=None):
+        def tranformed_data_generator(cursor):
+            for contact in cursor:
+                yield self.transform_data(contact)
 
-        with self.lock_final_data:
-            self.final_data.append(results)
-        # print("Final data lock end successfully")
-        
-    def clean_finaldata(self):
-        # print("Accessing to  final data lock")
-        final_data = []
-        with self.lock_final_data:
-            final_data = self.final_data
-            self.final_data = []
-        # print("Final data lock end successfully")
-        return final_data
-
-
-    def stop(self):
-        print(f"{self.name} Finishing")
-        # self.driver.close()
-from threading import Lock
-
-windowsadmin = WindowsDriverAdmin(lock=Lock())
-class LazyDriverWrapper:
-    def __init__(self):
-        self._driver = None
-        self.headless = True
-    @property
-    def driver(self):
-        if self._driver is None:
-            self._driver = self.create_driver()
-        return self._driver
-    
-    def create_driver(self):
-        # headless = True
-        driver  =  CustomDriverFactory().create_driver(BrowserConfig(block_images_fonts_css=True,headless=self.headless,use_undetected_driver=False))
-        if not self.headless:
-            windowsadmin.add_driver(driver)
-        return driver
-
-    def __getattr__(self, attr):
-        # print(attr)
-        obj_attr  = getattr(self.driver, attr)
-        if attr == "close" and not self.headless and callable(obj_attr): 
-            def wrapper(*args,**kwargs):
-                windowsadmin.remove_driver(self.driver)
-                return obj_attr(*args,**kwargs)
-            return wrapper
-        return obj_attr
-from time import sleep
-def batch_saving(consumers):
-    
-    all_data = []
-    active_consumers =  True
-    while active_consumers:
-        print("Batch saving: Sleeping 20 sec ...")
-        sleep(20)
-        active_consumers = False
-        all_data = []
-        for consumer in consumers:
-            if consumer.status != "COMPLETED": active_consumers = True
-            data  = consumer.clean_finaldata()
-            all_data.extend(data)
-        if all_data:
-            all_all_data = read_json("all_data.json") or []
-            all_all_data.extend(all_data)
-            write_json(all_all_data,"all_data.json")
-            print(f"Batch saving: Saved a batch. Batch len {len(all_data)}. Total data len {len(all_all_data)} ...")
+        if contacts_ids:
+            cursor = settings.contacts_collection.find({'_id': {'$in': contacts_ids}}, no_cursor_timeout=True)
         else:
-            print(f"Batch saving: Empty batch")
+            cursor = settings.contacts_collection.find({})
 
-    print(f"Batch saving: There is no active consumers, ending.")
-    json_to_excel(all_all_data , "all_all_data.xlsx")
-    print(f"Batch saving: all_all_data.xlsx created, ending.")
-
-
-
-
-
+        json_to_excel(tranformed_data_generator(cursor), 'outputs/'+keyword + '.xlsx')
+        cursor.close()
+    def remove_protocol(self,url):
+        if url:
+            parsed_url = urlparse(url)
+            return parsed_url.netloc
+    def transform_data(self, data):
+        return {
+            'uuid': str(data['place_id']),  # Convert ObjectId to string
+            'created_at': data['create_at'].strftime("%d/%m/%Y"),  # Format date to desired format
+            'query': data['keyword'],
+            'name': data['title'],
+            'fulladdr': data['address'],
+            # 'fulladdr1': data['address_1'],
+            'local_name': '',  # Data not provided
+            'local_fulladdr': data['title'],
+            'phone_numbers': data['phone'],
+            'latitude': data['coordinates']['latitude'],
+            'longitude': data['coordinates']['longitude'],
+            'categories': ', '.join(data['categories']),
+            # 'reviews': data['reviews'],
+            # 'rating': data['rating'],
+            'url': data['website'],
+            'domain': self.remove_protocol(data['website']),  # Assumption based on provided data
+            'thumbnail': data['thumbnail'],
+            'addr1': data['complete_address']['street'],
+            'addr2': '',  # Data not provided
+            'addr3': "",
+            'addr4': "",
+            'district': data["complete_address"]["borough"],  # Data not provided
+            'timezone': data['time_zone']
+        }
+@timer_decorator_log
+def sync_main(states):
+    all_keywords = list(KeywordGenerator(states).get_all_keywords())
+    
+    random.shuffle(all_keywords)
+    queries = [{"keyword": keyword,"max_results": 5} for keyword in all_keywords]
+    # queries = [{"keyword": keyword} for keyword in all_keywords]
+    driver = LazyDriverWrapper(block_images_fonts_css=True, headless=True, use_undetected_driver=False)
+    all_links = list(LinkCollector(driver).get_all_links(queries))
+    report_generator = ReportGenerator()
+    for keyword,links in all_links:
             
 
+        print(f"Visit Pages {len(links)}")
 
-def test_all():
-    all_keywords = list(get_all_keywords())
-    random.shuffle(all_keywords)
-    all_keywords =all_keywords
-    print("allkeywords: ",len(all_keywords))
-    queries = [{"keyword":keyword} for keyword in all_keywords]
-    # print(len(queries))
-    # print(len(divide_list(queries, num_of_groups=1, skip_if_less_than=10)))
-    all_links = []
-    producers = [LinksProducer(i+1,LazyDriverWrapper(),part,all_links) for i,part in enumerate(divide_list(queries, num_of_groups=2, skip_if_less_than=10))]
-    places_consumers = [PlacesConsumer(i+1,LazyDriverWrapper()) for i in range(3)]
-    # links_middleware = UniqueLinksMiddleware(1)
-    print("workers created")
-    unique_links_scheduler = Scheduler()
+        inserted_id_constacts = DataCollector(driver).visit_pages(keyword,links)
+        report_generator.generate_report(keyword,inserted_id_constacts)
+        driver.close()
 
-    unique_links_scheduler.run(producers,places_consumers)
-    
-    # places_data_scheduler =  Scheduler()
-    # print("workers stage 1 started")
-
-    # places_data_scheduler.run([links_middleware],places_consumers)
-    # print("workers stage 2 started")
-    # batch_saving_futures  = unique_links_scheduler.executor.submit(batch_saving,places_consumers)
-
-    batch_saving(places_consumers)
-    unique_links_scheduler.await_until_end()
+if __name__ == "__main__":
+    states_file = sys.argv[1]
+    print(f"Processing {states_file}")
+    states = read_json(states_file)
+    sync_main(states)
+class QueriesStatus:
+    PENDDING = 'P' 
+    LINKS_TASK = 'LT'
+    PLACES_TASK = 'PT'
+    COMPLETED  =  'C'
 
 
-    # wait(batch_saving_futures)
-    # print("Waiting to stop first stage")
-    # places_data_scheduler.await_until_end()
-    # print("Waiting to stop second stage")
+# report_generator = ReportGenerator()
+# report_generator.generate_report("test")
 
-    # places_data = places_data_scheduler.get_all_data()
-    # write_json(places_data , "places_data.json")
-
-@timer_decorator_log
-def sync_main():
-    all_keywords = list(get_all_keywords())
-    random.shuffle(all_keywords)
-    queries = [{"keyword":keyword} for keyword in all_keywords]
-    driver=  LazyDriverWrapper()
-    uniquelinks = []
-    @timer_decorator_log
-    def scroll_pages():
-        # print("Finding in maps .....")
-        producer = LinksProducer(1,driver,queries,uniquelinks)
-        all_links= list( producer.generate_items() )
-        print("Maps find ends .....")
-        print("writing  all_links_sync.json file.....")
-        write_json(all_links,"all_links_sync.json")
-        return all_links
-    @timer_decorator_log
-    def visit_pages():
-
-        all_data=[]
-        all_links = read_json("all_links_sync.json")
-        print("Starting Maps Place extraction")
-        for data in all_links:
-            link = data['link']
-            config = data['config']
-            results = PlaceMapsTask(driver,{'link':link,"keyword":config}).run()
-            all_data.append(results)
-            if len(all_data) >= 100:
-                all_all_data = read_json("all_data_sync.json") or []
-                all_all_data.extend(all_data)
-                write_json(all_all_data,"all_data_sync.json")
-                all_data = []
-
-        all_all_data = read_json("all_data_sync.json") or []
-        all_all_data.extend(all_data)
-        write_json(all_all_data,"all_data_sync.json")
-        print("Maps places extraction ends")
-        print("writing  all_data_sync.json file.....")
-        # write_json(all_data,"all_data_sync.json")
-        print("writing  all_data_sync.xlsx file.....")
-        json_to_excel(all_all_data,"all_data_sync.xlsx")
-        return all_all_data
-    # scroll_pages()
-    visit_pages()
-    driver.close()
-    
-sync_main()
-# test_all()kvQACOLBPMServices
+# docker run \
+# --env-file .env \
+# --network mongo_default \
+# -v $(pwd)/outputs:/src/outputs \
+# -v $(pwd)/queries.json:/src/queries.json \
+# santosdev20/googlemapsscrapping:v1 

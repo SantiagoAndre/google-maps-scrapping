@@ -1,6 +1,7 @@
 from .chromedriver import CustomDriver
 from .undetecteddriver import UndetectedDriver
 from .windows_driver_admin import WindowsDriverAdmin
+from .lazzy_wrapper import LazyDriverWrapper
 class Wait:
     SHORT = 4
     LONG = 8
@@ -41,9 +42,7 @@ class Scroller:
 
         self.number_of_times_not_scrolled += not did_element_scroll
         # print("number_of_times_not_scrolled end_el = ",self.number_of_times_not_scrolled)
-
         if self.max_results:
-
             els = self.driver.get_elements_or_none_by_selector(self.content_selector, Wait.SHORT)
             # print("els = ",els)
             if len(els) >= self.max_results:
@@ -53,5 +52,4 @@ class Scroller:
 
         if did_element_scroll:
             print("Scrolling...")
-        # print("hola scroll")
         return True
