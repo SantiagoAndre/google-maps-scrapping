@@ -391,22 +391,22 @@ function saveStringToFile(data, filename) {
       rating,
       reviews,
       status,
-      price_range,
+      // price_range,
       website, 
       phone,
   
       description,
       address,
-      reviews_per_rating,
+      // reviews_per_rating,
       reviews_link,
       thumbnail,
-      images,
-      hours,
+      // images,
+      // hours,
   
   
-      menu,
-      order_online_links,
-      reservations,
+      // menu,
+      // order_online_links,
+      // reservations,
   
       owner,
   
@@ -420,7 +420,7 @@ function saveStringToFile(data, filename) {
       time_zone,
   
       about,
-      user_reviews,    
+      // user_reviews,    
       cid,
       data_id,
     }

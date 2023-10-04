@@ -13,6 +13,7 @@ class LazyDriverWrapper:
         self._driver = None
         self.headless =kwargs.get("headless",False)
         self.kwargs = kwargs
+        self.current_url = None
 
     @property
     def driver(self):
@@ -23,6 +24,8 @@ class LazyDriverWrapper:
     def create_driver(self):
         # headless = True
         driver  =  CustomDriverFactory().create_driver(BrowserConfig(**self.kwargs))
+        if self.current_url:  # Navigate to the stored URL if it exists
+            self._driver.get(self.current_url)
         if not self.headless:
             windowsadmin.add_driver(driver)
         return driver
@@ -39,7 +42,10 @@ class LazyDriverWrapper:
         
             def wrapper(*args,**kwargs):
                 try:
-                    return obj_attr(*args,**kwargs)
+                    result = obj_attr(*args, **kwargs)
+                    if attr == "get":  # Capture the URL when the 'get' method is called
+                        self.current_url = args[0] if args else None
+                    return result
                 except InvalidSessionIdException:
                     self._driver = None
                     print("Driver restarted")

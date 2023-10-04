@@ -4,7 +4,7 @@ from tasks import LinksMapsTask, PlaceMapsTask
 from drivers import LazyDriverWrapper, TaskConfig
 from utils import read_json, json_to_excel, timer_decorator_log
 from mongo import BatchedMongoSaver
-
+# import sync
 import settings
 import random
 from urllib.parse import urlparse
@@ -16,7 +16,7 @@ class KeywordGenerator:
 
     def get_all_keywords(self):
         industries = settings.industries_collection.find({})
-        industries = list(industries)[1:]
+        industries = list(industries)
         for industry in industries:
             for state in self.states:
                 for country in state['countries']:
@@ -26,21 +26,28 @@ class KeywordGenerator:
 class LinkCollector:
     def __init__(self, driver):
         self.driver = driver
-
     def get_all_links(self, queries):
         config = TaskConfig(reviews=0)
-        all_links = [] 
-        for i, query in enumerate(queries):
+        for  query in queries:
+            # status = sync.get_sync_status(action= 'links_scroll',keyword=query['keyword'])
+
+            # if status == sync.SYNC_STATUS.completed: 
+            #     print(f"Links scroll for {query['keyword']} skiped, already completed ")
+            #     continue
+            n_links_in_db = settings.links_collection.count_documents({'keyword':query['keyword']})
+            if n_links_in_db > settings.N_LINKS_TO_SKIP_LINKS_SCROLL:
+                print(f"Links scroll for {query['keyword']} skiped, already completed, there are {n_links_in_db} links. ")
+                continue
             task = LinksMapsTask(self.driver, query, config)
             links = task.run()
             if not links:continue
-            batch = [{'link':link , 'query':query['keyword']} for link in links]
+            batch = [{'link':link , 'keyword':query['keyword']} for link in links]
             # inserted_limks = [doc.get("_id") for doc in batch]  # Preinicializa con todos los IDs
-
             try:
-                response = settings.links_collection.insert_many(batch,ordered=False)
+                settings.links_collection.insert_many(batch,ordered=False)
+
                 # inserted_ids = response.inserted_ids
-            except BulkWriteError as bwe:
+            except BulkWriteError:
                 # # Maneja o registra los errores
                 # for error in bwe.details["writeErrors"]:
                 #     if error["code"] == 11000:  # código de error de duplicado
@@ -50,40 +57,65 @@ class LinkCollector:
                 #         links[index] = None
 
                 # Limpia los None de la lista
-                links = [i for i in links if i is not None]
-            yield query['keyword'],links
+                pass
+                # links = [i for i in links if i is not None]
             
 class DataCollector:
     def __init__(self, driver):
         self.driver = driver
         self.batch_contacts_saver = BatchedMongoSaver(settings.contacts_collection,batch_size=100)
         # print(settings.contacts_collection)
-    def visit_pages(self,keyword, all_links):
-        inserted_ids = []
-        for link in all_links:
+    def get_links(self,keyword):
+        pipeline = [
+            {
+                "$match": {"keyword": keyword}
+            },
+            {
+                "$lookup": {
+                    "from": settings.CONTACTS_COLLECTION,
+                    "localField": "link",
+                    "foreignField": "link",
+                    "as": "contact_links"
+                }
+            },
+            {
+                "$match": {
+                    "contact_links": []
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "link": 1
+                }
+            }
+        ]
+
+        result = list(settings.links_collection.aggregate(pipeline))
+        return  [doc['link'] for doc in result]
+
+    def visit_pages(self,keyword):
+        links = self.get_links(keyword)
+        for link in links:
             
             results = PlaceMapsTask(self.driver, {'link': link},config={'keyword':keyword}).run()
-            _id = self.batch_contacts_saver.add(results)
-            inserted_ids.append(_id)
+            self.batch_contacts_saver.add(results)
+            
         self.batch_contacts_saver.flush()
-        return inserted_ids
 
 class ReportGenerator:
     def __init__(self) -> None:
         pass
 
-    def generate_report(self, keyword, contacts_ids=None):
+    def generate_report(self, keyword):
         def tranformed_data_generator(cursor):
             for contact in cursor:
                 yield self.transform_data(contact)
 
-        if contacts_ids:
-            cursor = settings.contacts_collection.find({'_id': {'$in': contacts_ids}}, no_cursor_timeout=True)
-        else:
-            cursor = settings.contacts_collection.find({})
-
+        cursor = settings.contacts_collection.find({'keyword':keyword})
+    
         json_to_excel(tranformed_data_generator(cursor), 'outputs/'+keyword + '.xlsx')
-        cursor.close()
+        # cursor.close()
     def remove_protocol(self,url):
         if url:
             parsed_url = urlparse(url)
@@ -117,20 +149,17 @@ class ReportGenerator:
 @timer_decorator_log
 def sync_main(states):
     all_keywords = list(KeywordGenerator(states).get_all_keywords())
-    
+    # print(all_keywords)
     random.shuffle(all_keywords)
-    queries = [{"keyword": keyword,"max_results": 5} for keyword in all_keywords]
-    # queries = [{"keyword": keyword} for keyword in all_keywords]
+    # queries = [{"keyword": keyword,"max_results": 5} for keyword in all_keywords]
+    queries = [{"keyword": keyword} for keyword in all_keywords]
     driver = LazyDriverWrapper(block_images_fonts_css=True, headless=True, use_undetected_driver=False)
-    all_links = list(LinkCollector(driver).get_all_links(queries))
+    LinkCollector(driver).get_all_links(queries)
     report_generator = ReportGenerator()
-    for keyword,links in all_links:
-            
+    for keyword in all_keywords:
 
-        print(f"Visit Pages {len(links)}")
-
-        inserted_id_constacts = DataCollector(driver).visit_pages(keyword,links)
-        report_generator.generate_report(keyword,inserted_id_constacts)
+        DataCollector(driver).visit_pages(keyword,)
+        report_generator.generate_report(keyword)
         driver.close()
 
 if __name__ == "__main__":

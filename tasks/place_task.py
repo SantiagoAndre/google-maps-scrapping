@@ -44,7 +44,7 @@ class PlaceMapsTask():
         # if not title:
         #     return {'link':link,'keyword':keyword}
 
-        out_dict = {'link': link, 'title': title}#,'keyword':keyword}
+        out_dict = {'link': link, 'title': title,'keyword':keyword,'create_at':datetime.now()}#,'keyword':keyword}
         try:
             additional_data = self.driver.execute_file('get_more_data.js')
             out_dict.update(additional_data)
@@ -60,8 +60,6 @@ class PlaceMapsTask():
             out_dict['error'] = str(E)
         out_dict['address'] = self.modify_address(out_dict['address'],out_dict['complete_address'].get('state',None))
         print('Done: ' + out_dict.get('title', ''))
-        out_dict['create_at'] = datetime.now()
-        out_dict['keyword'] = keyword
         return out_dict
 
     # def run(self):

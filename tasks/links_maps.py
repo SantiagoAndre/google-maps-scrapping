@@ -1,6 +1,6 @@
 
 import urllib.parse
-
+from urllib.parse import urlparse, urlunparse
 from utils import read_json,write_json
 from drivers import Wait,Scroller,TaskConfig
 
@@ -43,8 +43,15 @@ class LinksMapsTask():
             pass
 
         def extract_links(elements):
+            def remove_query_parameters(url):
+                parsed_url = urlparse(url)
+                return urlunparse(
+                    (parsed_url.scheme, parsed_url.netloc, parsed_url.path, '', '', '')
+                )
             def extract_link(el):
-                return el.get_attribute("href")
+                url = el.get_attribute("href")
+                if url:
+                    return remove_query_parameters(url)
 
             return list(map(extract_link, elements))
 

@@ -126,5 +126,4 @@ class CustomDriverFactory:
             load_cookies(driver, config)
 
         driver.browser_config = config
-        print("asd")
         return driver

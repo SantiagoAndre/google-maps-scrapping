@@ -14,15 +14,12 @@ IF "%QUERIES_FILE%"=="-" (SET QUERIES_FILE=.\queries.json)
 for %%i in (%QUERIES_FILE%) do set ABS_QUERIES_FILE=%%~fi
 SET DOCKER_CMD=!DOCKER_CMD! -v !ABS_QUERIES_FILE!:/src/queries.json
 
-IF "%ENV_FILE%"=="-" (SET ENV_FILE=.\.env)
-for %%i in (%ENV_FILE%) do set ABS_ENV_FILE=%%~fi
-SET DOCKER_CMD=!DOCKER_CMD! --env-file !ABS_ENV_FILE!
 
 IF "%OUTPUTS_DIR%"=="-" (SET OUTPUTS_DIR=.\outputs)
 for %%i in (%OUTPUTS_DIR%) do set ABS_OUTPUTS_DIR=%%~fi
 SET DOCKER_CMD=!DOCKER_CMD! -v !ABS_OUTPUTS_DIR!:/src/outputs
 
-SET DOCKER_CMD=!DOCKER_CMD! --network mongo_default
+@REM SET DOCKER_CMD=!DOCKER_CMD! --network mongo_default
 SET DOCKER_CMD=!DOCKER_CMD! santosdev20/googlemapsscrapping:!IMAGE_VERSION!
 
 echo !DOCKER_CMD!

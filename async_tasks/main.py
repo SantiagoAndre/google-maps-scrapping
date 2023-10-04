@@ -42,7 +42,7 @@ class LinksProducer(AbstractProducer):
     def generate_items(self):
         config = TaskConfig(reviews=0)
         print(self.queries)
-        for i,query in enumerate(self.queries):
+        for i,query in enumerate(self.queries,start=1):
             print("query ",i)
             task = LinksMapsTask(self.driver,query,config)
             links = task.run()

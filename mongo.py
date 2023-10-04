@@ -10,11 +10,11 @@ class BatchedMongoSaver:
 
     def add(self, data):
         """Agrega datos al buffer y guarda en MongoDB si se alcanza el tamaño del lote."""
-        if '_id' not in data: data['_id'] = ObjectId()
+        # if '_id' not in data: data['_id'] = ObjectId()
         self.buffer.append(data)
         if len(self.buffer) >= self.batch_size:
             self.flush()
-        return data['_id']
+        # return data['_id']
 
     def flush(self):
         """Guarda los datos en MongoDB y limpia el buffer."""
