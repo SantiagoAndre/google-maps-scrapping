@@ -2,9 +2,9 @@
 
 # Parámetros con valores predeterminados
 [ "$1" ] && QUERIES_FILE=$1 || QUERIES_FILE=./queries.json
-[ "$2" ] && ENV_FILE=$2 || ENV_FILE=./.env
-[ "$3" ] && OUTPUTS_DIR=$3 || OUTPUTS_DIR=./outputs
-[ "$4" ] && IMAGE_VERSION=$4 || IMAGE_VERSION=v1
+# [ "$2" ] && ENV_FILE=$2 || ENV_FILE=./.env
+[ "$2" ] && OUTPUTS_DIR=$2 || OUTPUTS_DIR=./outputs
+[ "$3" ] && IMAGE_VERSION=$3 || IMAGE_VERSION=v1
 
 
 # Verificar cada parámetro y construir el comando Docker

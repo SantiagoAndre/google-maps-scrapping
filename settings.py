@@ -4,16 +4,15 @@ import os
 from pymongo import MongoClient
 import pytz
 from utils import read_json
-ENVIRONMENT = os.environ['ENVIRONMENT']
+ENVIRONMENT = os.environ.get('ENVIRONMENT','prod')
 
 logging.info(f"Environment : {ENVIRONMENT}")
 
-if ENVIRONMENT == "dev":
-    logging.info(f"Loading .env file")
+logging.info(f"Loading .env file")
 
-    from dotenv import load_dotenv
+from dotenv import load_dotenv
 
-    load_dotenv()
+load_dotenv()
 
 MONGO_CONNECTION = os.environ['MONGO_CONNECTION']
 CONTACTACTS_DB = os.environ['CONTACTACTS_DB']
